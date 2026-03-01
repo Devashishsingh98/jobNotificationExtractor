@@ -1,0 +1,38 @@
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+pydantic==2.12.5
+pydantic-settings==2.7.1
+email-validator==2.3.0
+
+# Database
+supabase==2.11.0
+psycopg2-binary==2.9.10
+
+# Telegram
+telethon==1.37.0
+python-telegram-bot==21.10
+
+# Task Queue
+celery[redis]==5.4.0
+redis==5.2.0
+
+# AI (for complex notification parsing)
+google-generativeai==0.8.4
+
+# HTTP & Scraping
+httpx==0.28.1
+beautifulsoup4==4.12.3
+
+# Auth
+PyJWT==2.10.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20
+
+# Utils
+python-dateutil==2.9.0.post0
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.2
