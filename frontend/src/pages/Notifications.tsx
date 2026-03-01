@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { notificationAPI, Notification } from '../api/services';
+import { notificationAPI } from '../api/services';
+import type { Notification } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 
 const Notifications: React.FC = () => {
