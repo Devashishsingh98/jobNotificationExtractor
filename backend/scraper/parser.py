@@ -73,7 +73,7 @@ EXAM_TYPE_KEYWORDS = {
 try:
     settings = get_settings()
     genai.configure(api_key=settings.google_api_key)
-    gemini_model = genai.GenerativeModel('gemini-2.0-flash')
+    gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 except Exception:
     gemini_model = None  # Fallback disabled if API key not configured
 
