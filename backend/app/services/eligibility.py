@@ -166,3 +166,92 @@ def check_eligibility(user_profile: dict, notification: dict) -> dict:
         status = "eligible"
 
     return {"status": status, "reasons": reasons}
+
+
+def matches_preferences(user_preferences: dict, notification: dict) -> dict:
+    """
+    Check if a notification matches a user's notification preferences.
+
+    Returns:
+        {
+            "matches": True/False,
+            "score": 0.0-1.0,
+            "reasons": ["reason1", ...]
+        }
+    """
+    reasons = []
+    score = 0.0
+    total_checks = 0
+
+    # --- Exam type match ---
+    pref_exam_types = user_preferences.get("preferred_exam_types") or []
+    notif_exam_type = notification.get("exam_type", "")
+
+    if pref_exam_types:
+        total_checks += 1
+        if notif_exam_type in pref_exam_types:
+            score += 1.0
+            reasons.append(f"Exam type {notif_exam_type} ✓")
+        else:
+            reasons.append(f"Exam type {notif_exam_type} not in your preferences")
+
+    # --- Organization match ---
+    pref_orgs = user_preferences.get("preferred_orgs") or []
+    notif_org = notification.get("organization", "")
+
+    if pref_orgs:
+        total_checks += 1
+        if notif_org and notif_org in pref_orgs:
+            score += 1.0
+            reasons.append(f"Organization {notif_org} ✓")
+        elif notif_org:
+            reasons.append(f"Organization {notif_org} not in your preferences")
+
+    # --- State match ---
+    pref_states = user_preferences.get("preferred_states") or []
+    notif_org = notification.get("organization", "")
+    notif_exam_type = notification.get("exam_type", "")
+
+    STATE_PSC_MAP = {
+        "BPSC": "Bihar", "UPPSC": "Uttar Pradesh", "MPPSC": "Madhya Pradesh",
+        "RPSC": "Rajasthan", "WBPSC": "West Bengal", "KPSC": "Karnataka",
+        "TNPSC": "Tamil Nadu", "APPSC": "Andhra Pradesh", "TSPSC": "Telangana",
+        "HPPSC": "Himachal Pradesh", "UKPSC": "Uttarakhand", "CGPSC": "Chhattisgarh",
+        "JPSC": "Jharkhand", "GPSC": "Gujarat", "MPSC": "Maharashtra",
+    }
+
+    if pref_states and notif_exam_type == "State" and notif_org in STATE_PSC_MAP:
+        total_checks += 1
+        notif_state = STATE_PSC_MAP[notif_org]
+        if notif_state in pref_states:
+            score += 1.0
+            reasons.append(f"State {notif_state} ✓")
+        else:
+            reasons.append(f"State exam for {notif_state}, not in your preferences")
+
+    # --- Education match ---
+    pref_min_edu = user_preferences.get("min_education")
+    notif_edu = notification.get("education_required")
+
+    if pref_min_edu and notif_edu:
+        total_checks += 1
+        pref_level = EDUCATION_LEVELS.get(pref_min_edu, 0)
+        notif_level = EDUCATION_LEVELS.get(notif_edu, 0)
+        if notif_level >= pref_level:
+            score += 1.0
+            reasons.append(f"Education {notif_edu} ✓")
+        else:
+            reasons.append(f"Below preferred education ({pref_min_edu})")
+
+    # --- Central/All India exams always match for everyone ---
+    if not pref_exam_types and not pref_orgs:
+        # No preferences set = match everything
+        total_checks = 1
+        score = 1.0
+        reasons.append("No filters set — showing all notifications")
+
+    # Calculate final score
+    final_score = score / max(total_checks, 1)
+    matches = final_score >= 0.5  # Match if at least 50% of criteria met
+
+    return {"matches": matches, "score": round(final_score, 2), "reasons": reasons}

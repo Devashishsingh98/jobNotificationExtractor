@@ -3,7 +3,10 @@
 from fastapi import APIRouter, HTTPException, Header
 from typing import Optional
 
-from app.models.schemas import UserProfileCreate, UserProfileResponse, UserResponse
+from app.models.schemas import (
+    UserProfileCreate, UserProfileResponse, UserResponse,
+    UserPreferencesCreate, UserPreferencesResponse,
+)
 from app.database import get_db
 from app.routes.auth import verify_token
 
@@ -76,3 +79,49 @@ async def set_telegram_chat_id(
     db = get_db()
     db.table("users").update({"telegram_chat_id": chat_id}).eq("id", user_id).execute()
     return {"status": "ok"}
+
+
+# ---- Preferences ----
+
+
+@router.get("/preferences", response_model=UserPreferencesResponse)
+async def get_preferences(authorization: Optional[str] = Header(None)):
+    """Get current user's notification preferences."""
+    user_id = get_current_user_id(authorization)
+    db = get_db()
+    result = db.table("user_preferences").select("*").eq("user_id", user_id).execute()
+    if not result.data:
+        # Create default preferences if missing
+        db.table("user_preferences").insert({"user_id": user_id}).execute()
+        result = db.table("user_preferences").select("*").eq("user_id", user_id).execute()
+    return result.data[0]
+
+
+@router.put("/preferences", response_model=UserPreferencesResponse)
+async def update_preferences(
+    data: UserPreferencesCreate,
+    authorization: Optional[str] = Header(None),
+):
+    """Update current user's notification preferences."""
+    user_id = get_current_user_id(authorization)
+    db = get_db()
+
+    update_data = data.model_dump(exclude_none=True)
+    update_data["updated_at"] = "now()"
+
+    # Upsert — create if not exists
+    existing = db.table("user_preferences").select("id").eq("user_id", user_id).execute()
+    if existing.data:
+        result = (
+            db.table("user_preferences")
+            .update(update_data)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    else:
+        update_data["user_id"] = user_id
+        result = db.table("user_preferences").insert(update_data).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to update preferences")
+    return result.data[0]

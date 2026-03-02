@@ -21,6 +21,16 @@ export interface UserProfile {
   exam_interests?: string[];
 }
 
+export interface UserPreferences {
+  user_id?: string;
+  preferred_exam_types: string[];
+  preferred_states: string[];
+  preferred_orgs: string[];
+  min_education?: string;
+  notify_via: string[];
+  max_notifications_per_day: number;
+}
+
 export interface Notification {
   id: number;
   title: string;
@@ -53,6 +63,8 @@ export const userAPI = {
   updateProfile: (data: UserProfile) => apiClient.put('/api/users/profile', data),
   updateTelegramChatId: (chatId: number) =>
     apiClient.put('/api/users/telegram-chat-id', { telegram_chat_id: chatId }),
+  getPreferences: () => apiClient.get('/api/users/preferences'),
+  updatePreferences: (data: UserPreferences) => apiClient.put('/api/users/preferences', data),
 };
 
 // Notifications
@@ -60,6 +72,8 @@ export const notificationAPI = {
   list: (params?: { page?: number; per_page?: number; exam_type?: string; search?: string }) =>
     apiClient.get('/api/notifications', { params }),
   getById: (id: number) => apiClient.get(`/api/notifications/${id}`),
+  getMatched: (params?: { page?: number; per_page?: number }) =>
+    apiClient.get('/api/notifications/matched', { params }),
   select: (notificationIds: number[]) =>
     apiClient.post('/api/notifications/select', { notification_ids: notificationIds }),
 };

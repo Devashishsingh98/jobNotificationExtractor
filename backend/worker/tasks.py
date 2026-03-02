@@ -2,7 +2,7 @@
 
 from worker.celery_app import celery_app
 from app.database import get_db
-from app.services.eligibility import check_eligibility
+from app.services.eligibility import check_eligibility, matches_preferences
 from app.services.delivery import format_notification_message, send_telegram_message_sync
 
 
@@ -18,8 +18,8 @@ def scrape_all_channels():
 @celery_app.task(name="worker.tasks.match_and_deliver")
 def match_and_deliver(notification_id: int):
     """
-    When a new notification is stored, find all eligible premium users
-    and send them the notification via Telegram.
+    When a new notification is stored, find all users with matching preferences
+    and record matches. Deliver via Telegram to premium users.
     """
     db = get_db()
 
@@ -36,56 +36,124 @@ def match_and_deliver(notification_id: int):
 
     notification = notif_result.data[0]
 
-    # Get all premium users with telegram_chat_id and profile
+    # Get ALL users with preferences
     users_result = (
         db.table("users")
-        .select("id, telegram_chat_id")
-        .eq("is_premium", True)
+        .select("id, telegram_chat_id, is_premium, is_active")
         .eq("is_active", True)
-        .not_.is_("telegram_chat_id", "null")
         .execute()
     )
 
     if not users_result.data:
-        print("No premium users to notify")
+        print("No active users")
         return
 
+    matched = 0
     delivered = 0
+
     for user in users_result.data:
-        # Get user profile
+        user_id = user["id"]
+
+        # Get user preferences
+        pref_result = (
+            db.table("user_preferences")
+            .select("*")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        preferences = pref_result.data[0] if pref_result.data else {}
+
+        # Check preference match
+        match = matches_preferences(preferences, notification)
+        if not match["matches"]:
+            continue
+
+        # Get user profile for eligibility
         profile_result = (
             db.table("user_profiles")
             .select("*")
-            .eq("user_id", user["id"])
+            .eq("user_id", user_id)
             .execute()
         )
-        if not profile_result.data:
-            continue
-
-        profile = profile_result.data[0]
+        profile = profile_result.data[0] if profile_result.data else None
 
         # Check eligibility
-        eligibility = check_eligibility(profile, notification)
-        if eligibility["status"] == "not_eligible":
+        eligibility = None
+        if profile:
+            eligibility = check_eligibility(profile, notification)
+
+        # Record match for all users (for "For You" feed)
+        try:
+            db.table("notification_matches").insert({
+                "user_id": user_id,
+                "notification_id": notification_id,
+                "match_score": match["score"],
+                "match_reasons": match["reasons"],
+            }).execute()
+            matched += 1
+        except Exception:
+            pass  # Already matched
+
+        # Deliver via Telegram to premium users only
+        if user.get("is_premium") and user.get("telegram_chat_id"):
+            if eligibility and eligibility["status"] == "not_eligible":
+                continue  # Don't send ineligible notifications to premium users
+
+            message = format_notification_message(notification, eligibility)
+            success = send_telegram_message_sync(user["telegram_chat_id"], message)
+
+            if success:
+                try:
+                    db.table("notification_deliveries").insert({
+                        "user_id": user_id,
+                        "notification_id": notification_id,
+                        "delivery_type": "auto",
+                    }).execute()
+                    delivered += 1
+                except Exception:
+                    pass
+
+    print(f"📬 Notification {notification_id}: matched {matched} users, delivered to {delivered} premium users")
+
+
+@celery_app.task(name="worker.tasks.reprocess_notifications")
+def reprocess_notifications():
+    """Re-process existing notifications with AI for richer data."""
+    db = get_db()
+    from scraper.parser import parse_notification
+
+    # Get notifications with missing critical fields
+    result = (
+        db.table("notifications")
+        .select("id, raw_text")
+        .is_("organization", "null")
+        .limit(20)
+        .execute()
+    )
+
+    if not result.data:
+        print("No notifications need re-processing")
+        return
+
+    updated = 0
+    for notif in result.data:
+        if not notif.get("raw_text"):
             continue
 
-        # Format and send message
-        message = format_notification_message(notification, eligibility)
-        success = send_telegram_message_sync(user["telegram_chat_id"], message)
+        parsed = parse_notification(notif["raw_text"])
+        # Only update fields that are now non-null
+        update_data = {}
+        for key in ["title", "organization", "exam_type", "last_date",
+                     "min_age", "max_age", "education_required", "total_vacancies"]:
+            if parsed.get(key) is not None:
+                update_data[key] = parsed[key]
 
-        if success:
-            # Record delivery
-            try:
-                db.table("notification_deliveries").insert({
-                    "user_id": user["id"],
-                    "notification_id": notification_id,
-                    "delivery_type": "auto",
-                }).execute()
-                delivered += 1
-            except Exception:
-                pass  # Already delivered
+        if update_data:
+            db.table("notifications").update(update_data).eq("id", notif["id"]).execute()
+            updated += 1
+            print(f"  ✅ Re-processed #{notif['id']}: {update_data.get('organization', '?')}")
 
-    print(f"📬 Notification {notification_id}: delivered to {delivered} premium users")
+    print(f"📊 Re-processed {updated}/{len(result.data)} notifications")
 
 
 @celery_app.task(name="worker.tasks.deliver_selected_notifications")

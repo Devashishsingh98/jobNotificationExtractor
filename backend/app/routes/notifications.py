@@ -10,7 +10,7 @@ from app.models.schemas import (
 )
 from app.database import get_db
 from app.routes.auth import verify_token
-from app.services.eligibility import check_eligibility
+from app.services.eligibility import check_eligibility, matches_preferences
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -75,6 +75,63 @@ async def list_notifications(
     return NotificationListResponse(
         notifications=enriched,
         total=result.count or 0,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.get("/matched", response_model=NotificationListResponse)
+async def matched_notifications(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    authorization: Optional[str] = Header(None),
+):
+    """Get notifications matching the user's preferences."""
+    user_id = get_current_user_id(authorization)
+    db = get_db()
+
+    # Get user preferences
+    pref_result = db.table("user_preferences").select("*").eq("user_id", user_id).execute()
+    preferences = pref_result.data[0] if pref_result.data else {}
+
+    # Get user profile for eligibility
+    profile_result = db.table("user_profiles").select("*").eq("user_id", user_id).execute()
+    user_profile = profile_result.data[0] if profile_result.data else None
+
+    # Fetch all recent notifications (last 200)
+    notif_result = (
+        db.table("notifications")
+        .select("*", count="exact")
+        .order("created_at", desc=True)
+        .limit(200)
+        .execute()
+    )
+
+    all_notifs = notif_result.data or []
+
+    # Filter by preferences
+    matched = []
+    for notif in all_notifs:
+        match = matches_preferences(preferences, notif)
+        if match["matches"]:
+            # Add eligibility info
+            if user_profile:
+                elig = check_eligibility(user_profile, notif)
+                notif["eligibility_status"] = elig["status"]
+                notif["eligibility_reasons"] = elig["reasons"]
+            else:
+                notif["eligibility_status"] = None
+                notif["eligibility_reasons"] = []
+            matched.append(notif)
+
+    # Paginate matched results
+    total = len(matched)
+    offset = (page - 1) * per_page
+    page_items = matched[offset:offset + per_page]
+
+    return NotificationListResponse(
+        notifications=page_items,
+        total=total,
         page=page,
         per_page=per_page,
     )

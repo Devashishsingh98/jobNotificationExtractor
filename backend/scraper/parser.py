@@ -163,10 +163,11 @@ def parse_notification(text: str) -> dict:
     """
     Extract structured data from notification text.
 
-    Returns dict with fields matching the notifications table.
-    Uses regex first, falls back to Gemini AI for missing fields.
+    AI-first approach: Gemini is the primary parser.
+    Regex results are used as fallback/defaults.
     """
-    result = {
+    # Regex extraction (baseline)
+    regex_result = {
         "title": extract_title(text),
         "organization": extract_organization(text),
         "exam_type": classify_exam_type(text),
@@ -179,42 +180,26 @@ def parse_notification(text: str) -> dict:
         "is_processed": True,
     }
 
-    # Extract age limits
+    # Extract age limits via regex
     age = extract_age_limits(text)
     if age:
-        result["min_age"] = age.get("min")
-        result["max_age"] = age.get("max")
+        regex_result["min_age"] = age.get("min")
+        regex_result["max_age"] = age.get("max")
 
-    # AI fallback: If critical fields are missing, try Gemini
-    missing_critical_fields = (
-        not result["title"] or
-        not result["organization"] or
-        not result["last_date"]
-    )
-
-    if missing_critical_fields and gemini_model:
+    # AI-first: Always try Gemini for richer extraction
+    if gemini_model:
         try:
             ai_result = parse_with_gemini(text)
-            # Fill in missing fields only
-            if not result["title"] and ai_result.get("title"):
-                result["title"] = ai_result["title"]
-            if not result["organization"] and ai_result.get("organization"):
-                result["organization"] = ai_result["organization"]
-            if not result["last_date"] and ai_result.get("last_date"):
-                result["last_date"] = ai_result["last_date"]
-            if not result["min_age"] and ai_result.get("min_age"):
-                result["min_age"] = ai_result["min_age"]
-            if not result["max_age"] and ai_result.get("max_age"):
-                result["max_age"] = ai_result["max_age"]
-            if not result["education_required"] and ai_result.get("education_required"):
-                result["education_required"] = ai_result["education_required"]
-            if not result["total_vacancies"] and ai_result.get("total_vacancies"):
-                result["total_vacancies"] = ai_result["total_vacancies"]
+            # AI results take priority, regex fills gaps
+            for key in ["title", "organization", "exam_type", "last_date",
+                        "min_age", "max_age", "education_required", "total_vacancies"]:
+                if ai_result.get(key) is not None:
+                    regex_result[key] = ai_result[key]
+                # Keep regex value if AI returned None
         except Exception as e:
-            # AI fallback failed, continue with regex results
-            print(f"Gemini fallback failed: {e}")
+            print(f"Gemini AI parsing failed, using regex: {e}")
 
-    return result
+    return regex_result
 
 
 def extract_title(text: str) -> str:

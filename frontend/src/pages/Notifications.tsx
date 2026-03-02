@@ -15,11 +15,16 @@ const Notifications: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [selectedNotif, setSelectedNotif] = useState<Notification | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const [activeTab, setActiveTab] = useState<'all' | 'foryou'>('all');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    fetchNotifications();
-  }, [page, examType]);
+    if (activeTab === 'all') {
+      fetchNotifications();
+    } else {
+      fetchMatched();
+    }
+  }, [page, examType, activeTab]);
 
   // Debounced search
   useEffect(() => {
@@ -47,6 +52,21 @@ const Notifications: React.FC = () => {
       setTotal(response.data.total);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load notifications. Please try again.');
+      setNotifications([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMatched = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await notificationAPI.getMatched({ page, per_page: 20 });
+      setNotifications(response.data.notifications);
+      setTotal(response.data.total);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to load matched notifications.');
       setNotifications([]);
     } finally {
       setLoading(false);
@@ -121,6 +141,29 @@ const Notifications: React.FC = () => {
           <p className="text-gray-600 mt-2">
             {total > 0 ? `${total} notification${total > 1 ? 's' : ''} found` : 'Browse and select notifications'}
           </p>
+          {/* Tab Switcher */}
+          {user && (
+            <div className="flex gap-1 mt-4 bg-gray-100 rounded-lg p-1 w-fit">
+              <button
+                onClick={() => { setActiveTab('all'); setPage(1); }}
+                className={`px-5 py-2 rounded-md text-sm font-medium transition ${activeTab === 'all'
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+                  }`}
+              >
+                📋 All Jobs
+              </button>
+              <button
+                onClick={() => { setActiveTab('foryou'); setPage(1); }}
+                className={`px-5 py-2 rounded-md text-sm font-medium transition ${activeTab === 'foryou'
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+                  }`}
+              >
+                ✨ For You
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Filters */}

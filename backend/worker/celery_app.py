@@ -25,7 +25,7 @@ celery_app.conf.update(
     beat_schedule={
         "scrape-telegram-channels": {
             "task": "worker.tasks.scrape_all_channels",
-            "schedule": crontab(minute="*/15"),  # Every 15 minutes
+            "schedule": crontab(hour="*/5", minute=0),  # Every 5 hours
         },
     },
 )

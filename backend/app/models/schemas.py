@@ -152,3 +152,51 @@ class ChannelResponse(BaseModel):
     channel_name: Optional[str] = None
     is_active: bool = True
     last_scraped_id: int = 0
+
+
+# ---- User Preferences ----
+
+VALID_EXAM_TYPES = ["Central", "State", "Banking", "Railway", "Defence", "PSU"]
+VALID_ORGS = [
+    "UPSC", "SSC", "IBPS", "RBI", "RRB", "NTA", "DRDO", "ISRO",
+    "BPSC", "UPPSC", "MPPSC", "RPSC", "WBPSC", "KPSC", "TNPSC",
+    "APPSC", "TSPSC", "HPPSC", "UKPSC", "CGPSC", "JPSC", "GPSC", "MPSC",
+    "SBI", "NABARD", "LIC", "EPFO", "FCI", "SAIL", "ONGC", "NTPC", "AAI",
+]
+
+
+class UserPreferencesCreate(BaseModel):
+    preferred_exam_types: list[str] = Field(default_factory=list)
+    preferred_states: list[str] = Field(default_factory=list)
+    preferred_orgs: list[str] = Field(default_factory=list)
+    min_education: Optional[str] = Field(None, pattern="^(10th|12th|Diploma|Graduation|Post Graduation|PhD)$")
+    notify_via: list[str] = Field(default_factory=lambda: ["website"])
+    max_notifications_per_day: int = Field(10, ge=1, le=50)
+
+    @field_validator('preferred_exam_types')
+    @classmethod
+    def validate_exam_types(cls, v):
+        for t in v:
+            if t not in VALID_EXAM_TYPES:
+                raise ValueError(f"Invalid exam type: {t}")
+        return v
+
+    @field_validator('notify_via')
+    @classmethod
+    def validate_notify_via(cls, v):
+        allowed = ["website", "telegram"]
+        for ch in v:
+            if ch not in allowed:
+                raise ValueError(f"Invalid notify channel: {ch}")
+        return v
+
+
+class UserPreferencesResponse(BaseModel):
+    user_id: Optional[str] = None
+    preferred_exam_types: list[str] = []
+    preferred_states: list[str] = []
+    preferred_orgs: list[str] = []
+    min_education: Optional[str] = None
+    notify_via: list[str] = ["website"]
+    max_notifications_per_day: int = 10
+
