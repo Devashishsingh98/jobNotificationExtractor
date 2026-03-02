@@ -1,7 +1,7 @@
 """Authentication routes: register, login, token verification."""
 
 from fastapi import APIRouter, HTTPException, Depends
-from passlib.hash import bcrypt
+import bcrypt as _bcrypt
 from datetime import datetime, timedelta, timezone
 import jwt
 
@@ -46,7 +46,7 @@ async def register(data: UserRegister):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     # Hash password and create user
-    password_hash = bcrypt.hash(data.password)
+    password_hash = _bcrypt.hashpw(data.password.encode(), _bcrypt.gensalt()).decode()
     result = db.table("users").insert({
         "email": data.email,
         "password_hash": password_hash,
@@ -75,7 +75,7 @@ async def login(data: UserLogin):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     user = result.data[0]
-    if not bcrypt.verify(data.password, user["password_hash"]):
+    if not _bcrypt.checkpw(data.password.encode(), user["password_hash"].encode()):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token(user["id"])
