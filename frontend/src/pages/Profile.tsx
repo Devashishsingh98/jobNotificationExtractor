@@ -2,12 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { userAPI } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand',
+  'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
+  'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab',
+  'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura',
+  'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+  'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu',
+  'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
+];
+
 const Profile: React.FC = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [telegramUsername, setTelegramUsername] = useState('');
 
   const [profile, setProfile] = useState({
     dob: '',
@@ -25,8 +37,11 @@ const Profile: React.FC = () => {
 
   const fetchProfile = async () => {
     try {
-      const response = await userAPI.getProfile();
-      const data = response.data;
+      const [profileRes, meRes] = await Promise.all([
+        userAPI.getProfile(),
+        userAPI.getMe(),
+      ]);
+      const data = profileRes.data;
       setProfile({
         dob: data.dob || '',
         gender: data.gender || '',
@@ -36,8 +51,9 @@ const Profile: React.FC = () => {
         state: data.state || '',
         exam_interests: data.exam_interests || [],
       });
+      setTelegramUsername(meRes.data.telegram_username || '');
     } catch (err) {
-      console.error('Failed to fetch profile', err);
+      setError('Failed to load profile. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -71,8 +87,21 @@ const Profile: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-xl">Loading...</div>
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-3xl mx-auto px-4">
+          <div className="bg-white rounded-lg shadow-lg p-8 animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
+            <div className="h-4 bg-gray-200 rounded w-2/3 mb-8"></div>
+            <div className="grid grid-cols-2 gap-6">
+              {[...Array(6)].map((_, i) => (
+                <div key={i}>
+                  <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+                  <div className="h-10 bg-gray-200 rounded"></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -111,6 +140,22 @@ const Profile: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Telegram Username (read-only info) */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <label className="block text-sm font-medium text-blue-800 mb-1">
+                Telegram Username
+              </label>
+              <div className="text-sm text-blue-700">
+                {telegramUsername ? (
+                  <span>@{telegramUsername.replace('@', '')}</span>
+                ) : (
+                  <span className="text-blue-500 italic">
+                    Not set. Set during registration to receive notifications via Telegram.
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -194,13 +239,17 @@ const Profile: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   State
                 </label>
-                <input
-                  type="text"
+                <select
                   value={profile.state}
                   onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                  aria-label="State"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Maharashtra, Bihar"
-                />
+                >
+                  <option value="">Select State</option>
+                  {INDIAN_STATES.map((state) => (
+                    <option key={state} value={state}>{state}</option>
+                  ))}
+                </select>
               </div>
             </div>
 

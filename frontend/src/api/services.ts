@@ -31,6 +31,10 @@ export interface Notification {
   max_age?: number;
   education_required?: string;
   total_vacancies?: number;
+  vacancy_by_category?: Record<string, number>;
+  age_relaxation?: Record<string, number>;
+  original_pdf_url?: string;
+  official_website_url?: string;
   eligibility_status?: string;
   eligibility_reasons?: string[];
   created_at?: string;

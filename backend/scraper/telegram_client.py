@@ -119,9 +119,19 @@ async def scrape_single_channel(client: TelegramClient, db, channel_config: dict
 
         # Store in database
         try:
-            db.table("notifications").insert(parsed).execute()
+            result = db.table("notifications").insert(parsed).execute()
             new_count += 1
             print(f"  ✅ New: {parsed['title'][:60]}...")
+
+            # Trigger auto-delivery to premium users
+            if result.data:
+                try:
+                    from worker.tasks import match_and_deliver
+                    notification_id = result.data[0]["id"]
+                    match_and_deliver.delay(notification_id)
+                    print(f"  📨 Queued delivery for notification #{notification_id}")
+                except Exception as task_err:
+                    print(f"  ⚠️ Could not queue delivery task: {task_err}")
         except Exception as e:
             print(f"  ⚠️ Failed to store notification: {e}")
 
