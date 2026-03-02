@@ -32,8 +32,9 @@ async def list_notifications(
     """List notifications with optional filtering. Adds eligibility status if user is logged in."""
     db = get_db()
 
-    # Build query
+    # Build query — only show notifications with meaningful data
     query = db.table("notifications").select("*", count="exact")
+    query = query.not_.is_("organization", "null")  # Must have AI-extracted org
 
     if exam_type:
         query = query.eq("exam_type", exam_type)

@@ -84,8 +84,15 @@ async def scrape_single_channel(client: TelegramClient, db, channel_config: dict
     max_id = last_id
 
     async for message in client.iter_messages(entity, min_id=last_id, limit=50):
-        if not message.text:
+        if not message.text or len(message.text) < 100:
             continue
+
+        # Skip messages older than 30 days
+        if message.date:
+            from datetime import datetime, timezone, timedelta
+            msg_age = datetime.now(timezone.utc) - message.date
+            if msg_age.days > 30:
+                continue
 
         # Track the highest message ID
         if message.id > max_id:
@@ -116,6 +123,17 @@ async def scrape_single_channel(client: TelegramClient, db, channel_config: dict
         pdf_info = await find_original_pdf(urls)
         parsed["original_pdf_url"] = pdf_info.get("original_pdf_url")
         parsed["official_website_url"] = pdf_info.get("official_website_url")
+
+        # Quality gate: skip notifications with expired last_date
+        if parsed.get("last_date"):
+            try:
+                from datetime import datetime
+                ld = datetime.fromisoformat(str(parsed["last_date"]).replace('Z', '+00:00'))
+                if ld.replace(tzinfo=None) < datetime.now():
+                    print(f"  ⏭ Expired: {parsed['title'][:60]}... (last_date: {parsed['last_date']})")
+                    continue
+            except Exception:
+                pass
 
         # Store in database
         try:
