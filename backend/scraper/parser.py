@@ -91,33 +91,43 @@ def parse_with_gemini(text: str) -> dict:
 
     Returns dict with extracted fields or empty dict on failure.
     """
-    prompt = f"""You are analyzing a government job notification from India. Extract the following information from the text and return ONLY valid JSON (no markdown, no explanations):
+    prompt = f"""You are an expert at analyzing Indian government job notifications scraped from Telegram channels.
 
+TASK: Extract structured job notification data from the messy Telegram text below. 
+
+CRITICAL RULES:
+1. "title" must be a CLEAN, DESCRIPTIVE title like "UPSC Engineering Services Examination 2026" or "SBI IT Officer Recruitment 2026". 
+   - NEVER use raw text like "__Last Date Today" or formatting artifacts.
+   - If the post is about a RESULT, write "SBI IT Officer Result 2026" etc.
+   - If the post is about EXAM DATES, write "RRB Technician Exam Schedule March 2026" etc.
+   - Always include the organization name and year in the title.
+2. "is_valid_notification": set to false if this is NOT a single job notification — e.g. it's a link compilation, a list of multiple jobs, an advertisement, or just a forwarded link with no real info.
+3. "organization" must be the SHORT ACRONYM — UPSC, SSC, RRB, SBI, LIC, IBPS, etc.
+4. "summary" — Write a 2-3 sentence human-readable summary of what this notification is about. Include key details like post name, total vacancies, eligibility, important dates.
+5. "apply_link" — Extract ANY direct application or official website URL from the text (NOT telegram links).
+6. Clean ALL Telegram formatting: remove __, **, emojis, and markdown artifacts.
+
+Return ONLY valid JSON:
 {{
-  "title": "Main title/heading of the notification",
-  "organization": "Organization acronym (e.g., UPSC, SSC, IBPS, RBI, RRB, etc.)",
-  "exam_type": "One of: Central, Banking, Railway, Defence, State, PSU, Other",
-  "last_date": "Last date in YYYY-MM-DD format",
-  "min_age": 18,
-  "max_age": 35,
-  "education_required": "One of: 10th, 12th, Diploma, Graduation, Post Graduation, PhD",
-  "total_vacancies": 100
+  "is_valid_notification": true,
+  "title": "Clean descriptive title with org name and year",
+  "organization": "ORG_ACRONYM",
+  "exam_type": "Central|Banking|Railway|Defence|State|PSU|Other",
+  "last_date": "YYYY-MM-DD or null",
+  "min_age": null,
+  "max_age": null,
+  "education_required": "10th|12th|Diploma|Graduation|Post Graduation|PhD|null",
+  "total_vacancies": null,
+  "summary": "2-3 sentence human-readable summary",
+  "apply_link": "https://... or null",
+  "post_type": "recruitment|result|admit_card|exam_date|answer_key|other"
 }}
 
-Important:
-- Use null for missing fields
-- For organization, use the acronym only (UPSC, not "Union Public Service Commission")
-- Date must be YYYY-MM-DD format
-- Ages must be integers
-- Education must exactly match one of the listed options
-- Return ONLY the JSON object, no other text
-
-Notification text:
+Telegram text:
 {text}"""
 
     try:
         response = gemini_model.generate_content(prompt)
-        # Extract JSON from response
         response_text = response.text.strip()
 
         # Remove markdown code blocks if present
@@ -129,16 +139,27 @@ Notification text:
 
         data = json.loads(response_text)
 
-        # Validate and clean the data
+        # Reject invalid notifications (link compilations, ads, etc.)
+        if not data.get("is_valid_notification", True):
+            return {"_invalid": True}
+
+        # Clean and validate the data
         result = {}
-        if data.get("title"):
-            result["title"] = str(data["title"])[:500]
+
+        # Title: clean Telegram formatting artifacts
+        title = data.get("title", "")
+        if title:
+            title = re.sub(r'[_*~`]+', '', title).strip()
+            title = re.sub(r'\s+', ' ', title).strip()
+            if len(title) > 5:
+                result["title"] = title[:500]
+
         if data.get("organization"):
-            result["organization"] = str(data["organization"])[:50]
+            org = re.sub(r'[_*]+', '', str(data["organization"])).strip()
+            result["organization"] = org[:50]
         if data.get("exam_type"):
             result["exam_type"] = str(data["exam_type"])
         if data.get("last_date"):
-            # Validate date format
             try:
                 datetime.strptime(data["last_date"], "%Y-%m-%d")
                 result["last_date"] = data["last_date"]
@@ -152,6 +173,13 @@ Notification text:
             result["education_required"] = str(data["education_required"])
         if data.get("total_vacancies") and isinstance(data["total_vacancies"], int):
             result["total_vacancies"] = data["total_vacancies"]
+        if data.get("summary"):
+            result["summary"] = str(data["summary"])[:1000]
+        if data.get("apply_link") and str(data["apply_link"]).startswith("http"):
+            if "t.me" not in str(data["apply_link"]):
+                result["apply_link"] = str(data["apply_link"])
+        if data.get("post_type"):
+            result["post_type"] = str(data["post_type"])
 
         return result
     except Exception as e:
@@ -190,14 +218,26 @@ def parse_notification(text: str) -> dict:
     if gemini_model:
         try:
             ai_result = parse_with_gemini(text)
+
+            # If AI flags as invalid (link compilation, ad, etc.), mark it
+            if ai_result.get("_invalid"):
+                regex_result["_invalid"] = True
+                return regex_result
+
             # AI results take priority, regex fills gaps
             for key in ["title", "organization", "exam_type", "last_date",
-                        "min_age", "max_age", "education_required", "total_vacancies"]:
+                        "min_age", "max_age", "education_required", "total_vacancies",
+                        "summary", "apply_link", "post_type"]:
                 if ai_result.get(key) is not None:
                     regex_result[key] = ai_result[key]
-                # Keep regex value if AI returned None
         except Exception as e:
             print(f"Gemini AI parsing failed, using regex: {e}")
+
+    # Clean title of Telegram formatting artifacts
+    if regex_result.get("title"):
+        title = re.sub(r'[_*~`]+', '', regex_result["title"]).strip()
+        title = re.sub(r'\s+', ' ', title).strip()
+        regex_result["title"] = title if len(title) > 3 else "Untitled Notification"
 
     return regex_result
 
